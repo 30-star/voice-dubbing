@@ -1,0 +1,123 @@
+<UserControl x:Class="GaoxiaoVideo.Views.VoiceDubbingPage"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Background="{DynamicResource CardColor}">
+ <UserControl.Resources>
+  <Style x:Key="DubbingVariantPickerStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+    <Grid>
+     <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+      <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+       <Border Background="{DynamicResource InputBackground}" BorderBrush="{DynamicResource InputBorder}" BorderThickness="1" CornerRadius="3" Padding="7,5">
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/></Grid.ColumnDefinitions>
+         <TextBlock Text="{Binding SelectedItem.Name, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+          Foreground="{DynamicResource TextColor}" TextTrimming="CharacterEllipsis"/>
+         <TextBlock Grid.Column="1" Text="▾" Foreground="{DynamicResource TextColor}" HorizontalAlignment="Right"/>
+        </Grid>
+       </Border>
+      </ControlTemplate></ToggleButton.Template>
+     </ToggleButton>
+     <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
+      <Border Background="{DynamicResource InputBackground}" BorderBrush="{DynamicResource InputBorder}" BorderThickness="1"
+       MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+       <ScrollViewer MaxHeight="220"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
+      </Border>
+     </Popup>
+    </Grid>
+    <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.6"/></Trigger></ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+ </UserControl.Resources>
+ <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel Margin="16">
+   <TextBlock Text="智能配音" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextColor}" />
+   <TextBlock Text="添加一个视频，修改字幕，选择一个声音，生成新的配音视频。" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,4,0,10" />
+   <Border BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <StackPanel><TextBlock Text="{Binding VideoName}" FontWeight="SemiBold" Foreground="{DynamicResource TextColor}" TextTrimming="CharacterEllipsis"/>
+      <TextBlock Text="{Binding VideoDuration}" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,4,0,0"/>
+     </StackPanel>
+     <WrapPanel Grid.Column="1">
+      <Button x:Name="AddVideoButton" Content="添加视频" Style="{StaticResource SecondaryButton}" Click="AddVideo_Click" IsEnabled="{Binding CanEdit}" Margin="4,0"/>
+      <Button x:Name="RecognizeButton" Content="识别字幕" Style="{StaticResource PrimaryButton}" Click="Recognize_Click" IsEnabled="{Binding CanRecognize}" Margin="4,0"/>
+     </WrapPanel>
+    </Grid>
+   </Border>
+   <WrapPanel Margin="0,0,0,10">
+    <TextBlock Text="字幕识别：" VerticalAlignment="Center" Foreground="{DynamicResource TextColor}"/>
+    <ComboBox x:Name="AsrProviderPicker" Style="{StaticResource DubbingVariantPickerStyle}" Width="270" ItemsSource="{Binding AsrChoices}" DisplayMemberPath="Name"
+      SelectedValuePath="Id" SelectedValue="{Binding AsrProvider}" IsEnabled="{Binding CanSelectAsr}" Margin="4,0,10,0"/>
+    <TextBlock Text="{Binding SubtitleSource}" Foreground="{DynamicResource SecondaryTextColor}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+   </WrapPanel>
+   <Border BorderBrush="{DynamicResource BorderColor}" BorderThickness="1" CornerRadius="6" Margin="0,0,0,10">
+     <StackPanel Margin="10">
+      <WrapPanel Margin="0,0,0,8">
+       <Button x:Name="SaveSubtitlesButton" Content="保存字幕" Style="{StaticResource PrimaryButton}" Click="SaveSubtitles_Click" IsEnabled="{Binding CanSave}" Margin="0,0,6,4"/>
+       <Button x:Name="RestoreSubtitleButton" Content="恢复该句原始文字" Style="{StaticResource SecondaryButton}" Click="RestoreSubtitle_Click" IsEnabled="{Binding CanCorrect}" Margin="0,0,6,4"/>
+       <Button Content="恢复全部原文" Style="{StaticResource SecondaryButton}" Click="RestoreAll_Click" IsEnabled="{Binding CanCorrect}" Margin="0,0,6,4"/>
+       <Button x:Name="DiscardButton" Content="放弃未保存修改" Style="{StaticResource SecondaryButton}" Click="Discard_Click" IsEnabled="{Binding CanCorrect}" Margin="0,0,6,4"/>
+      </WrapPanel>
+      <TextBlock Text="{Binding ReviewStatus}" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,0,0,6"/>
+      <DataGrid x:Name="SubtitleGrid" Height="245" ItemsSource="{Binding Subtitles}" SelectedItem="{Binding SelectedSubtitle}"
+       AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" IsEnabled="{Binding CanCorrect}"
+       CellEditEnding="Subtitle_CellEditEnding" EnableRowVirtualization="True">
+       <DataGrid.Columns>
+        <DataGridTextColumn Header="序号" Binding="{Binding Index}" IsReadOnly="True" Width="45"/>
+        <DataGridTextColumn Header="开始" Binding="{Binding Start}" IsReadOnly="True" Width="95"/>
+        <DataGridTextColumn Header="结束" Binding="{Binding End}" IsReadOnly="True" Width="95"/>
+        <DataGridTextColumn Header="字幕文字（可编辑）" Binding="{Binding Text, Mode=TwoWay}" Width="*" MinWidth="180"/>
+        <DataGridTextColumn Header="状态" Binding="{Binding Status}" IsReadOnly="True" Width="125"/>
+       </DataGrid.Columns>
+      </DataGrid>
+     </StackPanel>
+   </Border>
+   <WrapPanel Margin="0,0,0,8" IsEnabled="{Binding CanEdit}">
+    <TextBlock Text="配音声音：" Foreground="{DynamicResource TextColor}" VerticalAlignment="Center"/>
+    <ComboBox x:Name="VoicePicker" Style="{StaticResource DubbingVariantPickerStyle}" Width="210" ItemsSource="{Binding Voices}"
+     SelectedItem="{Binding SelectedVoice}" DisplayMemberPath="Name" Margin="6,0,0,0"/>
+   </WrapPanel>
+   <WrapPanel Margin="0,0,0,8">
+    <TextBlock Text="{Binding Statistics}" Foreground="{DynamicResource TextColor}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,4"/>
+    <Button x:Name="StartButton" Content="生成新配音视频" Style="{StaticResource PrimaryButton}" Click="Start_Click" IsEnabled="{Binding CanStart}" Margin="0,0,6,4"/>
+    <Button Content="停止" Style="{StaticResource SecondaryButton}" Click="Stop_Click" IsEnabled="{Binding IsBusy}" Margin="0,0,6,4"/>
+   </WrapPanel>
+   <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="{DynamicResource TextColor}" Margin="0,0,0,8"/>
+   <ProgressBar Height="5" IsIndeterminate="{Binding IsBusy}" Margin="0,0,0,8">
+    <ProgressBar.Style><Style TargetType="ProgressBar"><Setter Property="Visibility" Value="Collapsed"/>
+     <Style.Triggers><DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+    </Style></ProgressBar.Style>
+   </ProgressBar>
+   <TextBlock Text="{Binding OutputFreshness}" Foreground="{DynamicResource SecondaryTextColor}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+   <TextBlock Text="生成结果" FontWeight="Bold" Foreground="{DynamicResource TextColor}" Margin="0,0,0,5"/>
+   <WrapPanel><TextBlock Text="{Binding OutputVoice}" Foreground="{DynamicResource TextColor}" Margin="0,0,12,0"/>
+    <TextBlock Text="{Binding GenerationStage}" Foreground="{DynamicResource TextColor}"/></WrapPanel>
+   <TextBlock Text="{Binding OutputCacheSummary}" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,4,0,0"/>
+   <TextBox x:Name="OutputPathBox" Text="{Binding OutputPath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Margin="0,6,0,4"/>
+   <Expander Header="错误与时长警告" Foreground="{DynamicResource TextColor}"><TextBlock Text="{Binding OutputDetails}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextColor}"/></Expander>
+   <WrapPanel Margin="0,8,0,8">
+    <Button x:Name="PlayButton" Content="播放视频" IsEnabled="{Binding CanPlay}" Style="{StaticResource SecondaryButton}" Click="Play_Click" Margin="0,0,6,4"/>
+    <Button x:Name="OpenDirectoryButton" Content="打开输出目录" Style="{StaticResource SecondaryButton}" Click="OpenDirectory_Click" Margin="0,0,6,4"/>
+    <Button Content="查看报告" Style="{StaticResource SecondaryButton}" Click="OpenReport_Click" Margin="0,0,6,4"/>
+   </WrapPanel>
+   <TextBlock Text="保留完整配音尾音，明显超时只记录警告。画面已有字幕不会随新文案更新。" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,0,0,8"/>
+   <Expander Foreground="{DynamicResource TextColor}" Header="运行环境设置" IsEnabled="{Binding CanEdit}">
+    <StackPanel Margin="8">
+     <TextBlock Text="{Binding EnvironmentMessage}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,0,0,6"/>
+     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <TextBlock Text="Python" VerticalAlignment="Center"/><TextBox Grid.Column="1" Text="{Binding PythonPath}" Margin="0,2"/>
+      <TextBlock Grid.Row="1" Text="核心目录" VerticalAlignment="Center"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CoreDirectory}" Margin="0,2"/>
+      <TextBlock Grid.Row="2" Text="FFmpeg" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FFmpegPath}" Margin="0,2"/>
+      <TextBlock Grid.Row="3" Text="FFprobe" VerticalAlignment="Center"/><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding FFprobePath}" Margin="0,2"/>
+      <TextBlock Grid.Row="4" Text="缓存目录" VerticalAlignment="Center"/><TextBox Grid.Row="4" Grid.Column="1" Text="{Binding CacheDirectory}" ToolTip="留空使用核心模块原持久缓存" Margin="0,2"/>
+      <TextBlock Grid.Row="5" Text="输出目录" VerticalAlignment="Center"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding OutputDirectory}" ToolTip="留空使用核心模块 output 目录" Margin="0,2"/>
+      <TextBlock Grid.Row="6" Text="本地 ASR 模型" VerticalAlignment="Center"/><TextBox Grid.Row="6" Grid.Column="1" Text="{Binding AsrModel}" Margin="0,2"/>
+      <TextBlock Grid.Row="7" Text="卡卡 CLI" VerticalAlignment="Center"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding VideoCaptionerCli}" Margin="0,2"/>
+      <TextBlock Grid.Row="8" Text="识别超时（秒）" VerticalAlignment="Center"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding AsrTimeoutSeconds}" Margin="0,2"/>
+     </Grid>
+     <Button Content="保存设置并检查环境" Style="{StaticResource SecondaryButton}" Click="Environment_Click" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+    </StackPanel>
+   </Expander>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

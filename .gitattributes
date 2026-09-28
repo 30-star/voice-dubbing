@@ -1,0 +1,3 @@
+# Keep the verified core byte-identical, including its existing line endings.
+voice_dubbing/** -text
+tests/** -text

@@ -1,0 +1,20 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <SolidColorBrush x:Key="CardColor" Color="#FAFAFC"/>
+ <SolidColorBrush x:Key="TextColor" Color="#202536"/>
+ <SolidColorBrush x:Key="SecondaryTextColor" Color="#59657A"/>
+ <SolidColorBrush x:Key="BorderColor" Color="#D4DAE5"/>
+ <SolidColorBrush x:Key="InputBackground" Color="White"/>
+ <SolidColorBrush x:Key="InputBorder" Color="#BCC6D7"/>
+ <Style x:Key="SecondaryButton" TargetType="Button">
+  <Setter Property="Padding" Value="12,7"/>
+  <Setter Property="MinHeight" Value="32"/>
+  <Setter Property="Background" Value="#EFF2F7"/>
+  <Setter Property="Foreground" Value="#202536"/>
+  <Setter Property="BorderBrush" Value="#BCC6D7"/>
+ </Style>
+ <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+  <Setter Property="Background" Value="#315BD6"/>
+  <Setter Property="Foreground" Value="White"/>
+ </Style>
+</ResourceDictionary>

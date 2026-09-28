@@ -1,0 +1,11 @@
+{
+  "segments": [
+    {
+      "id": "1",
+      "start_ms": 0,
+      "end_ms": 3200,
+      "text": "如果你经常不知道怎么回话"
+    }
+  ],
+  "duration_ms": 32000
+}

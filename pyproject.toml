@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voice-dubbing"
+version = "1.0.0"
+description = "Standalone transcription, corrected subtitles and cached voice dubbing"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+asr = ["faster-whisper>=1.2,<2"]
+
+[project.scripts]
+voice_dubbing = "voice_dubbing.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["voice_dubbing*"]

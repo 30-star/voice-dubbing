@@ -1,0 +1,4 @@
+[
+  {"id":"bill","name":"Bill","provider":"elevenlabs","voice_id":"pqHfZKP75CvOlQylNhV4","model_id":"eleven_multilingual_v2"},
+  {"id":"sarah","name":"Sarah","provider":"elevenlabs","voice_id":"EXAVITQu4vr4xnSDxMaL","model_id":"eleven_multilingual_v2"}
+]

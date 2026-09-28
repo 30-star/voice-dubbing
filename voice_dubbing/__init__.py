@@ -1,0 +1,41 @@
+"""Standalone voice dubbing contracts; no media providers are loaded on import."""
+
+from .models import (
+    AwaitingCorrection, CorrectedSegment, CorrectedTimeline, CorrectionDraft,
+    AudioDubbingResult,
+    BatchDubbingJob,
+    BatchDubbingResult,
+    DubbingResult,
+    DubbingSegment,
+    DubbingTask,
+    DubbingVariantResult,
+    SpeechAudio,
+    SpeechRequest,
+    TranscriptSegment,
+    TranscriptTimeline,
+    VoiceSelection,
+    VoiceDubbingResult,
+    VoiceProfile,
+    ScriptSegment, ScriptVariant, ScriptDubbingSelection,
+    ScriptBatchDubbingJob, ScriptBatchDubbingResult,
+)
+
+__all__ = [
+    "AwaitingCorrection", "CorrectedSegment", "CorrectedTimeline", "CorrectionDraft",
+    "AudioDubbingResult",
+    "BatchDubbingJob",
+    "BatchDubbingResult",
+    "DubbingResult",
+    "DubbingSegment",
+    "DubbingTask",
+    "DubbingVariantResult",
+    "SpeechAudio",
+    "SpeechRequest",
+    "TranscriptSegment",
+    "TranscriptTimeline",
+    "VoiceSelection",
+    "VoiceDubbingResult",
+    "VoiceProfile",
+    "ScriptSegment", "ScriptVariant", "ScriptDubbingSelection",
+    "ScriptBatchDubbingJob", "ScriptBatchDubbingResult",
+]
