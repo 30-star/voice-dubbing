@@ -9,7 +9,7 @@ from .batch_pipeline import dub_video, run_batch
 from .correction import resolve_tts_timeline
 from .errors import MediaError
 from .models import AwaitingCorrection, BatchDubbingJob
-from .tts import CachedTTSProvider, ElevenLabsTTSProvider
+from .tts import CachedTTSProvider, default_registry
 
 
 def run_dub_video(args, profiles, options: dict) -> int:
@@ -23,24 +23,30 @@ def run_dub_video(args, profiles, options: dict) -> int:
     if args.timeline is not None:
         timeline, source = resolve_tts_timeline(args.timeline)
     # Pure local ASR/review requires no ElevenLabs key or initialized TTS adapter.
-    adapters = ({voice.id: ElevenLabsTTSProvider(model_id=voice.model_id, **options) for voice in profiles}
+    registry = default_registry()
+    configs = ({voice.id: registry.configuration(voice.provider, model_id=voice.model_id,
+                 options=options, settings=options.get("provider_settings")) for voice in profiles}
                 if args.timeline is not None or args.accept_asr else {})
+    for config in configs.values():
+        registry.create(config)  # Validate every adapter before any paid request.
     cache_dir = args.cache_dir or root / "cache" / "tts"
 
     def factory(voice):
-        provider = adapters[voice.id]
+        provider = registry.create(configs[voice.id])
         provider.selected_voice_name = voice.name
         return CachedTTSProvider(provider, cache_dir, enabled=not args.no_cache)
 
     if args.timeline is not None:
         result = run_batch(BatchDubbingJob(args.video.resolve(), timeline, profiles), output_dir=output,
             provider_factory=factory, language=args.language, ffmpeg_path=args.ffmpeg,
-            ffprobe_path=args.ffprobe, subtitle_source=source, asr_calls=0)
+            ffprobe_path=args.ffprobe, subtitle_source=source, asr_calls=0,
+            tts_concurrency=args.tts_concurrency)
     else:
         asr = create_asr(args, output, model=args.asr_model)
         result = dub_video(args.video, voices=profiles, asr_provider=asr, provider_factory=factory,
             output_dir=output, language=args.language, ffmpeg_path=args.ffmpeg,
-            ffprobe_path=args.ffprobe, accept_asr=args.accept_asr, asr_cache_dir=asr_cache_directory(args))
+            ffprobe_path=args.ffprobe, accept_asr=args.accept_asr, asr_cache_dir=asr_cache_directory(args),
+            tts_concurrency=args.tts_concurrency)
     if isinstance(result, AwaitingCorrection):
         print(json.dumps({"status": result.status, "subtitle_dir": str(result.subtitle_dir),
                           "raw_timeline": str(result.subtitle_dir / "raw_timeline.json"),

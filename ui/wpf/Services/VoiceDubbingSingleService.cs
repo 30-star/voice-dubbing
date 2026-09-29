@@ -46,7 +46,10 @@ public sealed partial class VoiceDubbingService
                 if (rows.Length == 1)
                 {
                     var row = rows[0];
-                    if (Text(row.GetProperty("voice"), "id") != index.Voice.Id) throw new IOException("生成报告声音不匹配。");
+                    var voice = row.GetProperty("voice");
+                    if (Text(voice, "id") != index.Voice.Id || Text(voice, "provider") != index.Voice.Provider
+                        || Text(voice, "voice_id") != index.Voice.VoiceId || Text(voice, "model_id") != index.Voice.ModelId)
+                        throw new IOException("生成报告服务、模型或声音不匹配。");
                     string status = Text(row, "status"), video = Text(row, "video_path");
                     if (status == "succeeded" && !File.Exists(video)) throw new IOException("生成报告的视频文件不存在。");
                     return index with { Status = status, Stage = status == "succeeded" ? "完成" : "生成失败",
@@ -64,7 +67,8 @@ public sealed partial class VoiceDubbingService
     public async Task<DubbingSingleGeneration> GenerateSingleAsync(DubbingSession session, DubbingVoice voice,
         IProgress<DubbingSingleGeneration>? progress, CancellationToken token = default)
     {
-        if (!Voices.Contains(voice)) throw new IOException("请选择声音配置中的一个有效声音。");
+        if (!Voices.Contains(voice) || voice.Provider != Configuration.TtsProvider)
+            throw new IOException("请选择当前配音服务配置中的一个有效声音。");
         var correction = await CorrectionAsync(session, token: token).ConfigureAwait(false);
         if (!correction.Reviewed || correction.HasDraft) throw new IOException("请先保存并确认字幕。");
         string run = Guid.NewGuid().ToString("N")[..12];
@@ -83,10 +87,14 @@ public sealed partial class VoiceDubbingService
         try
         {
             _runningGeneration = folder;
-            command = _process.RunAsync(Configuration.PythonPath, new[] { "-B", "-X", "utf8", "-m", "voice_dubbing",
+            var arguments = new System.Collections.Generic.List<string> { "-B", "-X", "utf8", "-m", "voice_dubbing",
                 "dub-video", session.SourceVideo, "--timeline", Subtitles(session), "--voices-file", manifest,
-                "--output-dir", folder, "--cache-dir", Cache, "--language", "zh", "--output-format", "mp3_44100_128",
-                "--ffmpeg", Configuration.FFmpegPath, "--ffprobe", Configuration.FFprobePath },
+                "--output-dir", folder, "--cache-dir", Cache, "--language", "zh",
+                "--ffmpeg", Configuration.FFmpegPath, "--ffprobe", Configuration.FFprobePath };
+            if (!string.IsNullOrWhiteSpace(Configuration.TtsConfigurationPath))
+                arguments.AddRange(new[] { "--tts-config", Configuration.TtsConfigurationPath });
+            arguments.AddRange(new[] { "--tts-concurrency", Configuration.TtsConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            command = _process.RunAsync(Configuration.PythonPath, arguments,
                 Configuration.CoreDirectory, Path.Combine(session.Directory, "logs", "single-" + run), linked.Token);
             progress?.Report(index);
             while (!command.IsCompleted)

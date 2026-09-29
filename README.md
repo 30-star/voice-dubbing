@@ -1,15 +1,19 @@
 # voice_dubbing：独立字幕校正与多音色配音
 
-独立 Python 包，附带 Windows WPF 智能配音页面和最小桌面宿主。默认通过外部卡卡字幕助手 CLI（B 接口）识别视频，Faster-Whisper 保留为本地备用。人工校正并保存基础字幕后，ElevenLabs 可以按多个文案、声音生成音轨和 MP4。Fake TTS 用于离线自动化测试。可以独立运行，也可由影匠智能配音页面调用，未接入自动调度器。
+独立 Python 包，附带配音专用 WPF 页面和最小桌面宿主，不包含影匠主程序。默认通过外部卡卡字幕助手 CLI（B 接口）识别视频，Faster-Whisper 保留为本地备用。人工校正并保存基础字幕后，ElevenLabs 可以按多个文案、声音生成音轨和 MP4。Fake TTS 用于离线自动化测试。可以独立运行，也可由影匠智能配音页面调用，未接入自动调度器。
 
 正式页面采用单视频、单声音、单输出：直接编辑已确认的 corrected 字幕，生成时自动保存，后续不重跑 ASR。未修改文字复用持久 TTS 缓存，已经标准化的 PCM WAV 校验后直接复用，避免逐句重复转换。高级 CLI 能力仍保留，页面不暴露多文案组合。详见 [快速修改一句并重新生成](docs/VOICE_DUBBING_RAPID_EDIT.md)。
 
+首次配音默认同时生成 **4 句**。页面“运行环境设置 → TTS 同时生成句数”可设置 1～8 并保存；CLI 的 `dub-video`、`dub-timeline`、`dub-scripts` 支持 `--tts-concurrency 4`。该设置不改变音频缓存键、语速或字幕时间。每个请求使用独立 Adapter，音频按字幕顺序处理；同一任务内重复文本共享缓存，不重复付费生成。发生失败后停止派发新句，等待已经开始的请求结束并保留产物，不自动重试整个任务。Provider 原有的限流重试规则继续生效，遇到限流可降低并发数。
+
+Python 服务调用默认串行以兼容既有自定义 Provider。调用 `run_batch(..., tts_concurrency=4)` 或 `run_script_batch(..., tts_concurrency=4)` 时，`provider_factory` 必须每次返回独立的 Provider 实例。直接调用 `synthesize_timeline(..., tts_concurrency=4)` 时，可用 `tts.concurrent.IsolatedTTSProvider(prototype, factory)` 包装 Adapter 工厂，确保计数、日志和请求状态互不干扰。
+
 ## 集成到其他程序
 
-本仓库包含独立 Python 包、113 项离线测试、Provider Adapter、CLI，以及 `ui/` 下的配音专用 WPF 页面和最小桌面宿主；不包含影匠主程序。版本为 **1.0.0**。
+本仓库包含独立 Python 包、158 项离线测试、Provider Adapter、CLI，以及 `ui/` 下的配音专用 WPF 页面和最小桌面宿主；不包含影匠主程序。版本为 **1.1.0**。
 
 - Python **3.11+**；FFmpeg / FFprobe 加入 PATH 或显式指定。
-- ElevenLabs 使用环境变量 `ELEVENLABS_API_KEY`，声音通过环境变量 `ELEVENLABS_VOICE_ID` 或外部 `config/voices.json` 配置；不提交真实密钥。
+- Noiz 使用环境变量 `NOIZ_API_KEY`，通过官方 API 刷新声音列表；ElevenLabs 使用环境变量 `ELEVENLABS_API_KEY`，声音通过环境变量 `ELEVENLABS_VOICE_ID` 或外部 `config/voices.json` 配置；不提交真实密钥。
 - VideoCaptioner 独立安装，通过 `VIDEOCAPTIONER_CLI` 配置；本仓库不包含其源码。Faster-Whisper 可通过 `pip install -e '.[asr]'` 安装可选依赖，模型单独管理。
 - 克隆到本机后执行 `python -m pip install -e .`，可 `import voice_dubbing`，也可使用 `voice_dubbing` 或 `python -m voice_dubbing`。
 - 基础调用：`transcribe-video` → `correction set-text` / `save` → `dub-video --timeline ... --voices-file ...`；已有已确认字幕直接跳过 ASR。
@@ -102,7 +106,11 @@ python -m voice_dubbing dub-timeline 'output\review' --provider fake --voice fak
 
 命令在独立的新输出目录下生成 `segments/000001/speech.wav` 等逐句音频、`dubbed_audio.wav`、`dubbing_report.json`、`dubbing_report.csv` 和 `logs/`。可通过 `--output-dir` 指定**空目录**，通过 `--ffmpeg` 指定 FFmpeg。报告记录目标时长、实际测量的音频时长、带符号的 `overflow_ms = actual_duration_ms - target_duration_ms` 及重叠警告；Fake 标明 `is_mock=true`。超长语音从原字幕起点播放到结束；重叠区混音，末句若超过视频时长则延长完整音轨。不做时间拉伸或裁切。Fake 的时长仅用于测试流程，不能代表真实人声语速。
 
-时长报告采用 150 ms 容差：误差和实际重叠始终如实记录，但只有超过 150 ms 才标记警告。容差内保留自然语速，不重新生成；末句超出原视频时长时仍保留完整人声。后续 Duration Matcher 先检查与下一句的明显重叠，只有明显超出时才考虑语速调整。
+时长匹配采用 150 ms 容差：默认以字幕结束与下一句开始中较早的时间为播放窗口；超出超过 150 ms 时，用 FFmpeg `atempo` 加速完整音频并实测输出，避免明显人声重叠。容差内保持自然语速，末句轻微超出仍保留尾音。所有原始字幕时间、文本与 TTS 音频保持不变，不重新请求 TTS。
+
+JSON/CSV 保留 `actual_duration_ms`、`overflow_ms` 和 `overlap_with_next_ms` 的原始 TTS 含义，新增 `playback_audio_path`、`playback_duration_ms`、`speed_factor`、`duration_adjusted`、`playback_overlap_with_next_ms` 描述最终播放结果。处理后的 `matched.wav` 只存于本次任务，不写入 TTS 缓存；同一原音频在不同窗口下重新计算匹配。Python `synthesize_timeline(..., match_duration=False)` 可用于原始重叠行为的对比测试。大于 1.5 倍加速会记录听感检查提示；同时起点的字幕无法顺序对齐，会在 TTS 前明确拒绝。
+
+加速因子超过 2 时拆分为多级 `atempo`，依据 [FFmpeg 官方说明](https://ffmpeg.org/ffmpeg-filters.html#atempo)。不使用逐句截断、改写文本或重采样升调；按完整处理结果进行混音和尾音覆盖。
 
 ## ElevenLabs 真实语音
 
@@ -145,13 +153,13 @@ python -m voice_dubbing dub-video 'C:\Videos\sample.mp4' `
 ]
 ```
 
-不带 `--timeline` 时返回 `awaiting_correction`，不会初始化 ElevenLabs Adapter，也不需要密钥；保存基础字幕后，用上面的命令继续配音。自动化场景可显式加 `--accept-asr` 接受新识别的原文并立即配音，它与 `--timeline` 互斥。`--asr-model` 配置 Faster-Whisper；`--model-id` 设置 `--voices` 的默认 TTS 模型。其余 ElevenLabs 格式、超时和重试参数与单声音命令相同。实际 TTS 密钥只读取 `ELEVENLABS_API_KEY`。声音与字幕串行处理，一个声音失败仍继续下一个。
+不带 `--timeline` 时返回 `awaiting_correction`，不会初始化 TTS Adapter，也不需要密钥；保存基础字幕后，用上面的命令继续配音。自动化场景可显式加 `--accept-asr` 接受新识别的原文并立即配音，它与 `--timeline` 互斥。`--asr-model` 配置 Faster-Whisper；`--model-id` 设置 `--voices` 的默认 TTS 模型。格式、超时和重试参数与单声音命令相同。TTS 密钥只读取对应 Provider 的环境变量。声音按顺序处理，每个声音内默认并发生成 4 句；一个声音失败仍继续下一个。
 
 默认在模块 `output/<任务名>/` 创建唯一目录。识别阶段保留字幕校正文件组和源音频；消费已审核字幕时在新的输出目录保存实际配音 Timeline 快照、批量报告及各声音的产物。`batch_report.json` 记录 raw/corrected 指纹、来源、修改标记、ASR 次数、声音状态、路径、警告、缓存命中、生成数和真实 TTS HTTP 请求次数。逐声音 JSON/CSV 的 `subtitle_edited` 表示基础字幕校正标记。全部成功退出码为 `0`，部分成功为 `3`，公共阶段或所有声音失败为 `2`；等待校正正常返回 `0`。指定 `--output-dir` 时目录必须为空。
 
 批量任务默认启用跨任务持久缓存，位置为模块 `cache/tts`；可用 `--cache-dir` 更换，或 `--no-cache` 关闭。缓存键包含原文、Provider、voice ID、模型、输出格式、语言和有效 TTS 参数。命中后仍会把原始语音及 WAV 复制到本次句子目录。单声音 `dub-timeline` 默认行为不变，可用 `--cache-dir` 显式启用同一缓存。缓存不会保存 API Key。
 
-视频合成保留原画面并替换音轨；若人声长于画面，则冻结末帧直至完整尾音结束。逐句音频从原 `start_ms` 播放，误差与重叠 `≤150ms` 不触发警告或变速；超过容差仅记录警告，本阶段仍不截断声音。
+视频合成保留原画面并替换音轨；若轻微超出的尾音长于画面，则冻结末帧直至完整尾音结束。逐句音频从原 `start_ms` 播放，误差与重叠 `≤150ms` 不触发变速；明显超长时使用上述时长匹配。
 
 真实批量验收单独启用，会产生付费 ElevenLabs 请求：
 
@@ -183,7 +191,7 @@ python -m unittest integration_tests.test_batch_live -v
 同盘基础引用相对于版本文件目录保存；跨盘使用绝对路径。复制到其他目录会重新计算相对引用。原始 ASR 身份或时间结构不一致时拒绝绑定；仅校正文字变化不会使版本失效。原版覆盖表为空；设置为当前基础文字、或 `restore`，均删除对应覆盖。
 
 ```powershell
-Set-Location '<你的项目目录>\voice-dubbing'
+Set-Location '.'
 # 使用现有已审核字幕，不重新运行 ASR。
 python -m voice_dubbing script create 'output\source' `
   --id original --name 原版 --output 'scripts\original.json'
@@ -235,7 +243,7 @@ python -m voice_dubbing dub-scripts 'C:\Videos\sample.mp4' `
   --timeline 'output\source' --variants-file 'scripts\jobs.json' --language zh
 ```
 
-任务只读取一次基础快照，验证全部版本和声音后，按版本、声音、片段顺序串行执行；不调用 ASR 或音频提取。一个组合失败仍继续其余组合。密钥只读取环境变量；模型由 VoiceProfile 指定，其他 TTS、FFmpeg、输出和缓存选项沿用现有入口。全部成功返回 `0`，部分成功 `3`，公共阶段或全部失败 `2`。
+任务只读取一次基础快照，验证全部版本和声音后，按版本、声音顺序执行；每个组合内默认并发生成 4 句，最终按原字幕顺序合成。不调用 ASR 或音频提取。一个组合失败仍继续其余组合。密钥只读取环境变量；模型由 VoiceProfile 指定，其他 TTS、FFmpeg、输出和缓存选项沿用现有入口。全部成功返回 `0`，部分成功 `3`，公共阶段或全部失败 `2`。
 
 ```text
 output/<task>/
@@ -252,7 +260,7 @@ output/<task>/
 
 MP4 名称为 `<源视频名>_<variant.id>_<voice.id>.mp4`。报告保存版本及声音的 ID/名称、实际基础与有效 Timeline 指纹、逐句 `text_source=base/override`、缓存命中、生成数、HTTP 请求数和时长。缓存键完全不变，不包含版本、路径、名称、时间戳或基础指纹；相同有效文字和声音配置继续命中。两句、三版本、两声音，原版缓存齐全而两个新句未缓存时：命中 8 条，新生成 4 条；重复运行复用新增缓存。
 
-继续接受 ≤150 ms 的偏差；明显超出只警告，保留完整人声及尾音，不变速、不改写。画面中已有字幕不会随新文案更新。
+继续接受 ≤150 ms 的偏差；明显超出使用上述时长匹配，保留原始人声并记录实际加速比例，不改写文本。画面中已有字幕不会随新文案更新。
 
 ### 本阶段真实验收
 
@@ -277,3 +285,13 @@ Remove-Item Env:VOICE_DUBBING_RUN_CORRECTION_INTEGRATION
 ```
 
 产物保存在 `output/correction-acceptance-<ID>/`：`subtitles/` 保存 raw、corrected 和原始兼容副本；`results/` 保存两个 MP4、音轨及 JSON/CSV；`acceptance_check.json` 记录 ASR 初次 1 次、校正后 0 次、文件指纹、缓存及逐句时长检查。原视频画面字幕不随校正文字更新；本阶段不修改画面字幕。
+
+## 配音服务选择与扩展
+
+正式页面现在有「配音服务」和「配音声音」两个下拉框。ElevenLabs / Bill 默认兼容；Noiz 已接入真实 Adapter，配置 `NOIZ_API_KEY` 后自动读取其声音列表，也可使用“刷新声音”。火山、MiniMax、SiliconFlow 仍为预留项。未配置或列表失败时禁止生成，不会回退或继续使用旧服务的声音。
+
+`python -m voice_dubbing tts-providers` 离线列出状态。通过 `--tts-config examples/tts-providers.json` 读取各 Provider 的非密钥参数，密钥只来自环境变量。新的缓存键包含服务、模型、声音、文字、格式、语言、速度和音频参数；默认速度保留对有效旧缓存的只读兼容。
+
+Noiz 的参数、使用命令和独立真实测试说明见 [Noiz 接入](docs/VOICE_DUBBING_NOIZ.md)。Noiz 使用 `noiz-v1` 作为内部模型身份，不向官方接口发送未支持的 model_id。中文传 `target_lang=zh`；支持 WAV/MP3、语速、质量及情绪参数。默认非流式，不提供克隆功能。普通测试不请求真实 API，真实验证必须显式启用。
+
+下一家 Adapter 的接入接口、文件和边界见 [Provider Registry](docs/VOICE_DUBBING_TTS_REGISTRY.md)。已有字幕、缓存、时长匹配和视频流程继续复用，不新增 UI 高级组合。

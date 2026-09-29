@@ -18,7 +18,8 @@ public sealed partial class VoiceDubbingService : IVoiceDubbingService
     private string? _configurationError;
     private string? _runningGeneration;
     public VoiceDubbingConfiguration Configuration { get; private set; }
-    public IReadOnlyList<DubbingVoice> Voices { get; }
+    public IReadOnlyList<DubbingVoice> Voices { get; private set; }
+    public IReadOnlyList<DubbingTtsProvider> Providers { get; private set; } = Array.Empty<DubbingTtsProvider>();
     private string Cache => string.IsNullOrWhiteSpace(Configuration.CacheDirectory)
         ? Path.Combine(Configuration.CoreDirectory, "cache", "tts") : Configuration.CacheDirectory;
     private string Output => string.IsNullOrWhiteSpace(Configuration.OutputDirectory)
@@ -41,13 +42,15 @@ public sealed partial class VoiceDubbingService : IVoiceDubbingService
         try { Voices = JsonSerializer.Deserialize<DubbingVoice[]>(File.ReadAllText(voicesPath)) ?? Array.Empty<DubbingVoice>(); }
         catch (Exception ex) when (ex is IOException or JsonException) { Voices = Array.Empty<DubbingVoice>(); }
         if (Voices.Count == 0 || Voices.Any(v => v == null || string.IsNullOrWhiteSpace(v.Id) || string.IsNullOrWhiteSpace(v.Name)
-                || string.IsNullOrWhiteSpace(v.VoiceId) || string.IsNullOrWhiteSpace(v.ModelId) || v.Provider != "elevenlabs")
+                || string.IsNullOrWhiteSpace(v.VoiceId) || string.IsNullOrWhiteSpace(v.ModelId) || string.IsNullOrWhiteSpace(v.Provider))
             || Voices.Select(v => v.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != Voices.Count)
             Voices = Array.Empty<DubbingVoice>();
     }
 
     public void Configure(VoiceDubbingConfiguration configuration)
     {
+        if (configuration.TtsConcurrency is < 1 or > 8)
+            throw new ArgumentException("TTS 同时生成句数必须为 1–8。");
         if (configuration.AsrProvider is not ("videocaptioner" or "faster-whisper") || configuration.AsrTimeoutSeconds <= 0
             || configuration.AsrTimeoutSeconds > 86400) throw new ArgumentException("请选择有效字幕识别方式及 1–86400 秒超时时间。");
         if (_persist && !SafeFileStore.Save(VoiceDubbingConfiguration.SettingsPath, configuration))
@@ -112,12 +115,50 @@ public sealed partial class VoiceDubbingService : IVoiceDubbingService
                 { missing.Add("卡卡 CLI 启动失败：" + VoiceDubbingProcess.Sanitize(ex.Message)); }
             }
         }
-        bool key = !string.IsNullOrWhiteSpace(VoiceDubbingProcess.ApiKey);
+        string ttsError = "";
+        Providers = Array.Empty<DubbingTtsProvider>();
+        if (mediaReady)
+        {
+            try
+            {
+                var registry = await CliAsync(Path.Combine(Output, "environment-check"), new[] { "tts-providers" }, token).ConfigureAwait(false);
+                Providers = registry.GetProperty("providers").EnumerateArray().Select(item => new DubbingTtsProvider(
+                    item.GetProperty("id").GetString()!, item.GetProperty("name").GetString()!,
+                    item.GetProperty("implemented").GetBoolean(), item.GetProperty("configured").GetBoolean(),
+                    item.TryGetProperty("supports_voice_listing", out var online) && online.GetBoolean())).ToArray();
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            { ttsError = " 配音服务检查失败：" + VoiceDubbingProcess.Sanitize(ex.Message); }
+        }
         string summary = missing.Count == 0 ? (Configuration.AsrProvider == "videocaptioner"
             ? "卡卡 B 接口可用；识别需要联网。" : "Faster-Whisper 本地识别可用。") : "请检查：" + string.Join("、", missing) + "。";
-        return new(missing.Count == 0, mediaReady && key && Voices.Count > 0,
-            summary + (key ? " ElevenLabs 已配置。" : " ELEVENLABS_API_KEY 未配置。")
-            + (Voices.Count == 0 ? " 声音配置缺失或无效。" : "") + _configurationError);
+        var selected = Providers.FirstOrDefault(p => p.Id == Configuration.TtsProvider);
+        return new(missing.Count == 0, mediaReady && Providers.Any(p => p.Ready),
+            summary + $" {selected?.Name ?? Configuration.TtsProvider}：{selected?.Status ?? "未配置"}。"
+            + (Voices.Count == 0 ? " 声音配置缺失或无效。" : "") + ttsError + _configurationError);
+    }
+
+    public async Task<IReadOnlyList<DubbingVoice>> RefreshVoicesAsync(string provider, CancellationToken token = default)
+    {
+        var descriptor = Providers.FirstOrDefault(p => p.Id == provider)
+            ?? throw new IOException("未知配音服务，请先检查运行环境。");
+        if (!descriptor.SupportsVoiceListing) return Voices.Where(v => v.Provider == provider).ToArray();
+        // Clear only this provider, so a rejected request cannot leave stale voices selectable.
+        Voices = Voices.Where(v => v.Provider != provider).ToArray();
+        if (!descriptor.Ready) return Array.Empty<DubbingVoice>();
+        var args = new List<string> { "tts-voices", "--provider", provider, "--timeout", "30", "--max-retries", "0" };
+        if (!string.IsNullOrWhiteSpace(Configuration.TtsConfigurationPath))
+            args.AddRange(new[] { "--tts-config", Configuration.TtsConfigurationPath });
+        var result = await CliAsync(Path.Combine(Output, "voice-catalog"), args, token).ConfigureAwait(false);
+        if (result.GetProperty("provider").GetString() != provider) throw new IOException("声音列表与所选配音服务不一致。");
+        var voices = result.GetProperty("voices").Deserialize<DubbingVoice[]>() ?? Array.Empty<DubbingVoice>();
+        if (voices.Any(v => v == null || v.Provider != provider || string.IsNullOrWhiteSpace(v.Id)
+                || string.IsNullOrWhiteSpace(v.Name) || string.IsNullOrWhiteSpace(v.VoiceId) || string.IsNullOrWhiteSpace(v.ModelId))
+            || voices.Select(v => v.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != voices.Length
+            || voices.Select(v => v.VoiceId).Distinct(StringComparer.Ordinal).Count() != voices.Length)
+            throw new IOException("配音服务返回的声音列表无效。");
+        Voices = Voices.Concat(voices).ToArray();
+        return voices;
     }
 
     public Task<DubbingSession?> RestoreSessionAsync(CancellationToken token = default)
@@ -318,10 +359,14 @@ public sealed partial class VoiceDubbingService : IVoiceDubbingService
         try
         {
             _runningGeneration = folder;
-            var command = _process.RunAsync(Configuration.PythonPath, new[] { "-B", "-X", "utf8", "-m", "voice_dubbing",
+            var arguments = new List<string> { "-B", "-X", "utf8", "-m", "voice_dubbing",
                 "dub-scripts", session.SourceVideo, "--timeline", Subtitles(session), "--variants-file", manifest,
-                "--output-dir", folder, "--cache-dir", Cache, "--language", "zh", "--output-format", "mp3_44100_128",
-                "--ffmpeg", Configuration.FFmpegPath, "--ffprobe", Configuration.FFprobePath },
+                "--output-dir", folder, "--cache-dir", Cache, "--language", "zh",
+                "--ffmpeg", Configuration.FFmpegPath, "--ffprobe", Configuration.FFprobePath };
+            if (!string.IsNullOrWhiteSpace(Configuration.TtsConfigurationPath))
+                arguments.AddRange(new[] { "--tts-config", Configuration.TtsConfigurationPath });
+            arguments.AddRange(new[] { "--tts-concurrency", Configuration.TtsConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            var command = _process.RunAsync(Configuration.PythonPath, arguments,
                 Configuration.CoreDirectory, Path.Combine(session.Directory, "logs", "generate-" + run), linked.Token);
             progress?.Report(ProjectProgress(folder, scripts, voices, null, true));
             while (!command.IsCompleted)

@@ -35,7 +35,7 @@ class ScriptCLITests(unittest.TestCase):
                 {"script": "original.json", "voices": voices},
                 {"script": "bad.json", "voices": voices},
             ]), encoding="utf-8")
-            with patch("voice_dubbing.script_cli.ElevenLabsTTSProvider") as provider, \
+            with patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider") as provider, \
                     contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
                 result = main(["dub-scripts", str(source), "--timeline", str(root / "review"),
                                "--variants-file", str(root / "jobs.json"), "--output-dir", str(root / "out")])
@@ -183,7 +183,7 @@ class ScriptCLITests(unittest.TestCase):
                 kwargs["renderer"] = fake_renderer
                 return run_script_batch(job, **kwargs)
             with patch("voice_dubbing.script_cli.resolve_corrected_timeline", wraps=resolve_corrected_timeline) as reader, \
-                    patch("voice_dubbing.script_cli.ElevenLabsTTSProvider", side_effect=lambda **_: CountingTTS()), \
+                    patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider", side_effect=lambda **_: CountingTTS()), \
                     patch("voice_dubbing.script_cli.run_script_batch", side_effect=run), \
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 code = main(["dub-scripts", str(source), "--timeline", str(review), "--variants-file", str(jobs),

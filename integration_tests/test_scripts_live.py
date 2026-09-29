@@ -20,8 +20,8 @@ from voice_dubbing.tts import CachedTTSProvider, ElevenLabsTTSProvider
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get("VOICE_DUBBING_SOURCE_VIDEO", "fixtures/source.mp4"))
-PRIOR = Path(os.environ.get("VOICE_DUBBING_TIMELINE", "fixtures/timeline.json"))
+SOURCE = Path("input.mp4")
+PRIOR = ROOT / "output" / "··217312-batch-f4e96e12" / "timeline.json"
 REVISED_TEXT = "那你这辈子基本就定型了"
 VOICES = [
     {"id": "bill", "name": "Bill", "provider": "elevenlabs",
@@ -91,7 +91,7 @@ class ScriptLiveTests(unittest.TestCase):
                 {"script": "original.json", "voices": VOICES},
                 {"script": "revised.json", "voices": VOICES},
             ], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            with patch("voice_dubbing.script_cli.ElevenLabsTTSProvider", ChangedSentenceOnly):
+            with patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider", ChangedSentenceOnly):
                 result = self.invoke(["dub-scripts", str(SOURCE), "--timeline", str(timeline_path),
                     "--variants-file", str(jobs), "--language", "zh", "--output-format", "mp3_44100_128",
                     "--max-retries", "0", "--output-dir", str(output / "results")])

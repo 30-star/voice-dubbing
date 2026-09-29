@@ -72,10 +72,15 @@
      </StackPanel>
    </Border>
    <WrapPanel Margin="0,0,0,8" IsEnabled="{Binding CanEdit}">
+    <TextBlock Text="配音服务：" Foreground="{DynamicResource TextColor}" VerticalAlignment="Center"/>
+    <ComboBox x:Name="ProviderPicker" Style="{StaticResource DubbingVariantPickerStyle}" Width="175" ItemsSource="{Binding Providers}"
+     SelectedItem="{Binding SelectedProvider}" DisplayMemberPath="Name" Margin="6,0,12,0"/>
     <TextBlock Text="配音声音：" Foreground="{DynamicResource TextColor}" VerticalAlignment="Center"/>
     <ComboBox x:Name="VoicePicker" Style="{StaticResource DubbingVariantPickerStyle}" Width="210" ItemsSource="{Binding Voices}"
      SelectedItem="{Binding SelectedVoice}" DisplayMemberPath="Name" Margin="6,0,0,0"/>
+    <Button Content="刷新声音" Style="{StaticResource SecondaryButton}" Click="RefreshVoices_Click" Margin="8,0,0,0"/>
    </WrapPanel>
+   <TextBlock Text="{Binding ProviderStatus}" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,0,0,8"/>
    <WrapPanel Margin="0,0,0,8">
     <TextBlock Text="{Binding Statistics}" Foreground="{DynamicResource TextColor}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,4"/>
     <Button x:Name="StartButton" Content="生成新配音视频" Style="{StaticResource PrimaryButton}" Click="Start_Click" IsEnabled="{Binding CanStart}" Margin="0,0,6,4"/>
@@ -99,7 +104,7 @@
     <Button x:Name="OpenDirectoryButton" Content="打开输出目录" Style="{StaticResource SecondaryButton}" Click="OpenDirectory_Click" Margin="0,0,6,4"/>
     <Button Content="查看报告" Style="{StaticResource SecondaryButton}" Click="OpenReport_Click" Margin="0,0,6,4"/>
    </WrapPanel>
-   <TextBlock Text="保留完整配音尾音，明显超时只记录警告。画面已有字幕不会随新文案更新。" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,0,0,8"/>
+   <TextBlock Text="保持字幕起点同步，超过 150ms 的超长配音自动加速并保留原音频；轻微误差保留完整尾音。画面已有字幕不会随新文案更新。" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,0,0,8"/>
    <Expander Foreground="{DynamicResource TextColor}" Header="运行环境设置" IsEnabled="{Binding CanEdit}">
     <StackPanel Margin="8">
      <TextBlock Text="{Binding EnvironmentMessage}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextColor}" Margin="0,0,0,6"/>
@@ -115,6 +120,10 @@
       <TextBlock Grid.Row="7" Text="卡卡 CLI" VerticalAlignment="Center"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding VideoCaptionerCli}" Margin="0,2"/>
       <TextBlock Grid.Row="8" Text="识别超时（秒）" VerticalAlignment="Center"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding AsrTimeoutSeconds}" Margin="0,2"/>
      </Grid>
+     <TextBlock Text="TTS 配置文件（不含密钥，可选）" Margin="0,6,0,0"/>
+     <TextBox Text="{Binding TtsConfigurationPath}" Margin="0,2"/>
+     <TextBlock Text="TTS 同时生成句数（1–8，默认 4）" Margin="0,6,0,0"/>
+     <TextBox Text="{Binding TtsConcurrency}" Margin="0,2" ToolTip="同时请求多句语音；遇到服务限流可降低为 2 或 1。缓存与时间轴保持不变。"/>
      <Button Content="保存设置并检查环境" Style="{StaticResource SecondaryButton}" Click="Environment_Click" HorizontalAlignment="Left" Margin="0,8,0,0"/>
     </StackPanel>
    </Expander>

@@ -13,6 +13,13 @@ public sealed record DubbingVoice(
     [property: JsonPropertyName("voice_id")] string VoiceId,
     [property: JsonPropertyName("model_id")] string ModelId);
 
+public sealed record DubbingTtsProvider(string Id, string Name, bool Implemented, bool Configured, bool SupportsVoiceListing = false)
+{
+    public bool Ready => Implemented && Configured;
+    public string Status => !Implemented ? (Configured ? "API 已配置，Adapter 尚未接入" : "未配置（Adapter 尚未接入）")
+        : Configured ? "已配置" : "未配置";
+}
+
 public sealed record DubbingSession(string SourceVideo, long DurationMs, string Directory, string? LastGeneration = null,
     bool HasSubtitles = false, IReadOnlyList<DubbingCombination>? LastSelection = null,
     string? AsrProvider = null, string? LastSingleGeneration = null);
@@ -35,8 +42,12 @@ public interface IVoiceDubbingService : IAsyncDisposable
 {
     VoiceDubbingConfiguration Configuration { get; }
     IReadOnlyList<DubbingVoice> Voices { get; }
+    // Default preserves injected services written before registry discovery existed.
+    IReadOnlyList<DubbingTtsProvider> Providers => new[] { new DubbingTtsProvider("elevenlabs", "ElevenLabs", true, true) };
     void Configure(VoiceDubbingConfiguration configuration);
     Task<DubbingEnvironment> CheckEnvironmentAsync(CancellationToken token = default);
+    Task<IReadOnlyList<DubbingVoice>> RefreshVoicesAsync(string provider, CancellationToken token = default)
+        => Task.FromResult<IReadOnlyList<DubbingVoice>>(System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Where(Voices, v => v.Provider == provider)));
     Task<DubbingSession?> RestoreSessionAsync(CancellationToken token = default);
     Task<DubbingSession> AddVideoAsync(string path, CancellationToken token = default);
     Task<DubbingCorrection> RecognizeAsync(DubbingSession session, CancellationToken token = default);

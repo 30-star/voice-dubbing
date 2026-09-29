@@ -16,8 +16,8 @@ from voice_dubbing.models import SpeechRequest
 from voice_dubbing.tts import CachedTTSProvider, ElevenLabsTTSProvider
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get("VOICE_DUBBING_SOURCE_VIDEO", "fixtures/source.mp4"))
-BASE = Path(os.environ.get("VOICE_DUBBING_CORRECTED_DIR", "fixtures/subtitles"))
+SOURCE = Path("input.mp4")
+BASE = ROOT / "output" / "correction-acceptance-54f9d453" / "subtitles"
 NEW_TEXTS = {"variant_a": ("1", "连这本好书都舍不得买"),
              "variant_b": ("2", "那你这辈子基本就这样了")}
 VOICES = [
@@ -74,7 +74,7 @@ class SparseScriptLiveTests(unittest.TestCase):
             for id in ("original", "variant_a", "variant_b")], ensure_ascii=False, indent=2), encoding="utf-8")
         with patch("voice_dubbing.asr.FasterWhisperASRProvider.transcribe", side_effect=AssertionError("ASR forbidden")) as asr, \
                 patch("voice_dubbing.pipeline.extract_audio", side_effect=AssertionError("extraction forbidden")) as extract, \
-                patch("voice_dubbing.script_cli.ElevenLabsTTSProvider", NewTextsOnly):
+                patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider", NewTextsOnly):
             result = self.invoke(["dub-scripts", SOURCE, "--timeline", BASE, "--variants-file", jobs,
                 "--language", "zh", "--output-format", "mp3_44100_128", "--max-retries", "0",
                 "--output-dir", output / "results"])

@@ -20,6 +20,7 @@ from .renderer import RenderedVideo, render_dubbed_video
 from .timeline import load_timeline, save_timeline
 from .models.transcript import timeline_sha256
 from .tts import TTSProvider
+from .tts.concurrent import IsolatedTTSProvider, validate_concurrency
 
 
 ProviderFactory = Callable[[VoiceProfile], TTSProvider]
@@ -96,6 +97,7 @@ def render_voice(
     ffprobe_path: Path | None = None, renderer: VideoRenderer = render_dubbed_video,
     subtitle_source: dict | None = None,
     script_context: dict | None = None,
+    tts_concurrency: int = 1,
 ) -> VoiceDubbingResult:
     """One independent combination, shared by voice and script batches."""
     provider: TTSProvider | None = None
@@ -109,6 +111,8 @@ def render_voice(
     try:
         output_dir.mkdir()
         provider = provider_factory(voice)
+        if tts_concurrency > 1:
+            provider = IsolatedTTSProvider(provider, lambda: provider_factory(voice))
         previous_hits = getattr(provider, "cache_hits", 0)
         previous_requests = getattr(provider, "supplier_requests", 0)
         previous_warnings = len(getattr(provider, "warnings", []))
@@ -118,7 +122,8 @@ def render_voice(
             raise ValidationError(f"voice {voice.id} provider mismatch")
         audio = synthesize_timeline(timeline, provider=provider, voice_id=voice.voice_id,
                                     output_dir=output_dir, language=language, ffmpeg_path=ffmpeg_path,
-                                    subtitle_source=subtitle_source, script_context=script_context)
+                                    subtitle_source=subtitle_source, script_context=script_context,
+                                    tts_concurrency=tts_concurrency)
         audio_path = audio.audio_path
         output_duration_ms = audio.output_duration_ms
         warnings.extend(audio.warnings)
@@ -127,7 +132,9 @@ def render_voice(
     except Exception as exc:
         error = _redact(str(exc) or type(exc).__name__)
     warnings.extend(getattr(provider, "warnings", [])[previous_warnings:] if provider else [])
-    events = tuple(getattr(provider, "cache_events", [])[previous_events:]) if provider else ()
+    order = {segment.id: index for index, segment in enumerate(timeline.segments)}
+    events = tuple(sorted(getattr(provider, "cache_events", [])[previous_events:],
+                          key=lambda event: order.get(event["segment_id"], len(order)))) if provider else ()
     generated = sum(bool(event["generated"]) for event in events) if events else (
         getattr(provider, "provider_calls", 0) - previous_calls if provider else 0)
     return VoiceDubbingResult(
@@ -146,8 +153,10 @@ def run_batch(
     ffprobe_path: Path | None = None, renderer: VideoRenderer = render_dubbed_video,
     asr_calls: int = 0,
     subtitle_source: dict | None = None,
+    tts_concurrency: int = 1,
 ) -> BatchDubbingResult:
     """Render a prepared Timeline; useful for cache reuse without another ASR run."""
+    validate_concurrency(tts_concurrency)
     if not isinstance(job, BatchDubbingJob):
         raise ValidationError("job must be a BatchDubbingJob")
     if not job.source_video.is_file():
@@ -176,6 +185,7 @@ def run_batch(
             provider_factory=provider_factory, language=language, ffmpeg_path=ffmpeg_path,
             ffprobe_path=ffprobe_path, renderer=renderer,
             subtitle_source=subtitle_source,
+            tts_concurrency=tts_concurrency,
         ))
         report_path = _write_report(job, output_dir, completed, asr_calls, subtitle_source)
     successes = sum(item.status == "succeeded" for item in completed)
@@ -191,8 +201,10 @@ def dub_video(
     renderer: VideoRenderer = render_dubbed_video,
     accept_asr: bool = False,
     asr_cache_dir: Path | None = None,
+    tts_concurrency: int = 1,
 ) -> BatchDubbingResult | AwaitingCorrection:
     """Recognize once and stop for review unless ASR text is explicitly accepted."""
+    validate_concurrency(tts_concurrency)
     voices = validate_voice_profiles(voices)
     if not video_path.is_file():
         raise MediaError(f"source video not found: {video_path}")
@@ -212,4 +224,4 @@ def dub_video(
                      language=language, ffmpeg_path=ffmpeg_path,
                      ffprobe_path=ffprobe_path, renderer=renderer,
                      asr_calls=json.loads((output_dir / "asr_report.json").read_text(encoding="utf-8"))["asr_calls"],
-                     subtitle_source=subtitle_source)
+                     subtitle_source=subtitle_source, tts_concurrency=tts_concurrency)

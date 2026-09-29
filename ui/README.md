@@ -10,7 +10,7 @@
 dotnet run --project ui/desktop/VoiceDubbing.Desktop.csproj -c Release
 ```
 
-界面沿用单视频、单声音、单输出流程。展开环境设置配置实际可执行文件位置。声音来自 `config/voices.json`，密钥仍从环境变量读取；独立 UI 使用 `%APPDATA%/VoiceDubbing/voice-dubbing-service.json`，不读取或修改影匠用户设置。运行目录中必须存在 `voice_dubbing/voices.json`（桌面项目自动复制）。
+界面沿用单视频、单声音、单输出流程。展开环境设置配置实际可执行文件位置和 TTS 同时生成句数（默认 4，范围 1～8）。可选择 ElevenLabs 或 Noiz：ElevenLabs 声音来自 `config/voices.json`，Noiz 声音通过 API 刷新，密钥分别使用 `ELEVENLABS_API_KEY`、`NOIZ_API_KEY`。未配置的服务明确显示未配置，不自动切换。独立 UI 使用 `%APPDATA%/VoiceDubbing/voice-dubbing-service.json`，不读取或修改影匠用户设置。运行目录中必须存在 `voice_dubbing/voices.json`（桌面项目自动复制）。
 
 其他 WPF 程序可引用 `ui/wpf/VoiceDubbing.Wpf.csproj`，合并 `Styles.xaml`，嵌入 `GaoxiaoVideo.Views.VoiceDubbingPage`。原命名空间保留以避免改写已验证的页面代码。可通过构造函数注入 `IVoiceDubbingService`；显式配置 `CoreDirectory`、Python 和媒体工具路径。应用关闭时等待 `page.ShutdownAsync()`，终止本功能拥有的进程树。
 

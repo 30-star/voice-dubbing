@@ -21,8 +21,8 @@ from voice_dubbing.tts import CachedTTSProvider, ElevenLabsTTSProvider
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get("VOICE_DUBBING_SOURCE_VIDEO", "fixtures/source.mp4"))
-PRIOR = Path(os.environ.get("VOICE_DUBBING_TIMELINE", "fixtures/timeline.json"))
+SOURCE = Path("input.mp4")
+PRIOR = ROOT / "output" / "script-acceptance-3b09597b" / "source" / "timeline.json"
 CORRECTED_TEXT = "那你这辈子基本就定型了"
 VOICES = [
     {"id": "bill", "name": "Bill", "provider": "elevenlabs", "voice_id": "pqHfZKP75CvOlQylNhV4",
@@ -103,7 +103,7 @@ class CorrectionLiveTests(unittest.TestCase):
             voice_file = output / "voices.json"
             voice_file.write_text(json.dumps(VOICES, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             before_dubbing_asr = len(calls)
-            with patch("voice_dubbing.video_cli.ElevenLabsTTSProvider", ChangedSentenceOnly):
+            with patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider", ChangedSentenceOnly):
                 result = self.invoke(["dub-video", str(SOURCE), "--timeline", str(subtitles),
                     "--voices-file", str(voice_file), "--model-id", "eleven_multilingual_v2",
                     "--language", "zh", "--output-format", "mp3_44100_128", "--max-retries", "0",

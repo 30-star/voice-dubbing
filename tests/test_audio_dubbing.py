@@ -99,7 +99,7 @@ class AudioDubbingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             result = synthesize_timeline(
                 timeline, provider=ConstantProvider({"a": 400, "b": 300}),
-                voice_id="one", output_dir=Path(folder) / "dub"
+                voice_id="one", output_dir=Path(folder) / "dub", match_duration=False
             )
             self.assertEqual(result.output_duration_ms, 500)
             self.assertEqual(wav_frames(result.audio_path), 500 * 24)

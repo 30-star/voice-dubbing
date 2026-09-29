@@ -65,7 +65,7 @@ class VideoCaptionerASRProvider:
         config = logs / "captioner.toml"
         config.write_text('[transcribe]\nasr = "bijian"\n[output]\nformat = "srt"\n', encoding="utf-8")
         env = {k: v for k, v in os.environ.items() if not k.startswith("VIDEOCAPTIONER_")}
-        for secret in ("ELEVENLABS_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
+        for secret in ("ELEVENLABS_API_KEY", "NOIZ_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"):
             env.pop(secret, None)
         env.update({"TMP": str(temp), "TEMP": str(temp), "TMPDIR": str(temp), "PYTHONUTF8": "1"})
         profile = temp / "profile"

@@ -2,18 +2,22 @@
 
 import hashlib
 import json
+import math
 import shutil
 import wave
 from pathlib import Path
 from uuid import uuid4
+from threading import RLock
 
 from ..errors import ProviderError, ValidationError, VoiceDubbingError
+from ..config.tts import validate_audio_parameters
 from ..models import SpeechAudio, SpeechRequest
 from .base import TTSProvider
 
 
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2
 _AUDIO_SUFFIXES = {".wav", ".mp3", ".pcm", ".m4a", ".ogg", ".flac"}
+_ENTRY_LOCKS = tuple(RLock() for _ in range(256))
 
 
 def _digest(path: Path) -> str:
@@ -32,13 +36,22 @@ class CachedTTSProvider:
         self.provider = provider
         self.cache_dir = cache_dir.resolve()
         self.enabled = enabled
-        self.settings = settings or {}
+        defaults = getattr(provider, "cache_parameters", {})
+        if not isinstance(defaults, dict) or (settings is not None and not isinstance(settings, dict)):
+            raise ValidationError("cache settings must be a mapping of non-secret TTS parameters")
+        self.settings = {**defaults, **(settings or {})}
         if not isinstance(self.settings, dict) or any(
             not isinstance(key, str) or any(secret in key.casefold()
                                             for secret in ("api_key", "secret", "token", "password"))
             for key in self.settings
         ):
             raise ValidationError("cache settings must be a mapping of non-secret TTS parameters")
+        validate_audio_parameters(self.settings)
+        # Snapshot parameter data so external mutation cannot change a wrapper's cache identity.
+        self.settings = json.loads(json.dumps(self.settings))
+        self.speed = self.settings.pop("speed", 1.0)
+        if type(self.speed) not in (int, float) or not math.isfinite(self.speed) or self.speed <= 0:
+            raise ValidationError("cache speed must be a positive finite number")
         self.provider_id = provider.provider_id
         self.is_mock = bool(getattr(provider, "is_mock", False))
         self.model_id = getattr(provider, "model_id", None)
@@ -48,14 +61,15 @@ class CachedTTSProvider:
         self.provider_calls = 0
         self.warnings: list[str] = []
         self.cache_events: list[dict] = []
+        self._call_lock = RLock()
 
     @property
     def supplier_requests(self) -> int:
         return int(getattr(self.provider, "synthesis_http_requests", self.provider_calls))
 
-    def _entry(self, request: SpeechRequest) -> Path:
+    def _entry(self, request: SpeechRequest, *, legacy: bool = False) -> Path:
         payload = {
-            "version": _CACHE_VERSION,
+            "version": 1 if legacy else _CACHE_VERSION,
             "text": request.text,
             "provider": self.provider_id,
             "voice_id": request.voice_id,
@@ -64,6 +78,8 @@ class CachedTTSProvider:
             "language": request.language,
             "tts_parameters": self.settings,
         }
+        if not legacy:
+            payload["speed"] = float(self.speed)
         key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False,
                                         separators=(",", ":")).encode("utf-8")).hexdigest()
         return self.cache_dir / key[:2] / key
@@ -73,7 +89,7 @@ class CachedTTSProvider:
             manifest = json.loads((entry / "manifest.json").read_text(encoding="utf-8"))
             files = manifest["files"]
             audio_name = manifest["audio_name"]
-            if manifest["version"] != _CACHE_VERSION or not isinstance(files, dict) or audio_name not in files:
+            if manifest["version"] not in (1, _CACHE_VERSION) or not isinstance(files, dict) or audio_name not in files:
                 return None
             for name, expected_hash in files.items():
                 if not isinstance(name, str) or name != Path(name).name or Path(name).suffix.lower() not in _AUDIO_SUFFIXES:
@@ -141,9 +157,23 @@ class CachedTTSProvider:
 
     def is_cached(self, request: SpeechRequest) -> bool:
         """Read-only preflight, useful when only selected cache misses may generate speech."""
-        return self.enabled and self._validated(self._entry(request)) is not None
+        return self.enabled and any(self._validated(entry) is not None for entry in self._candidates(request))
+
+    def _candidates(self, request: SpeechRequest):
+        yield self._entry(request)
+        # Old entries cannot prove a non-default speed. Never reuse them for changed speed.
+        if self.speed == 1:
+            yield self._entry(request, legacy=True)
 
     def synthesize(self, request: SpeechRequest, *, output_dir: Path) -> SpeechAudio:
+        # Single-flight across independent workers sharing a cache key. The second
+        # identical sentence restores the first result instead of paying twice.
+        entry = self._entry(request)
+        entry_lock = _ENTRY_LOCKS[int(entry.name[:8], 16) % len(_ENTRY_LOCKS)]
+        with self._call_lock, entry_lock:
+            return self._record_synthesis(request, output_dir=output_dir)
+
+    def _record_synthesis(self, request: SpeechRequest, *, output_dir: Path) -> SpeechAudio:
         hits_before, calls_before, http_before = self.cache_hits, self.provider_calls, self.supplier_requests
         succeeded = False
         try:
@@ -164,9 +194,11 @@ class CachedTTSProvider:
 
     def _synthesize(self, request: SpeechRequest, *, output_dir: Path) -> SpeechAudio:
         entry = self._entry(request) if self.enabled else None
-        if entry is not None and entry.is_dir():
+        for candidate in self._candidates(request) if self.enabled else ():
+            if not candidate.is_dir():
+                continue
             try:
-                restored = self._restore(entry, request, output_dir)
+                restored = self._restore(candidate, request, output_dir)
             except OSError as exc:
                 self.warnings.append(f"speech cache read failed: {type(exc).__name__}: {exc}")
                 if output_dir.is_dir():

@@ -12,7 +12,7 @@ from voice_dubbing.cli import main
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get("VOICE_DUBBING_SOURCE_VIDEO", "fixtures/source.mp4"))
+SOURCE = Path("input.mp4")
 BILL = "pqHfZKP75CvOlQylNhV4"
 SARAH = "EXAVITQu4vr4xnSDxMaL"
 

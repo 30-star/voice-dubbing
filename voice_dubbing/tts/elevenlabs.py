@@ -53,6 +53,14 @@ def _retry_delay(headers, attempt: int) -> float:
     return min(60.0, float(2 ** (attempt - 1)))
 
 
+def create_from_configuration(config):
+    # Preserve the validated request contract; unsupported synthesis controls must not be ignored.
+    if config.speed != 1 or config.parameters:
+        raise ValidationError("ElevenLabs Adapter currently supports default speed=1 and no extra audio parameters")
+    return ElevenLabsTTSProvider(model_id=config.model_id, output_format=config.output_format,
+        timeout=config.timeout, max_retries=config.max_retries, ffmpeg_path=config.ffmpeg_path)
+
+
 class ElevenLabsTTSProvider:
     provider_id = "elevenlabs"
     is_mock = False

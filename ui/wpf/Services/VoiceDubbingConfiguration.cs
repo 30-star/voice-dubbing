@@ -18,6 +18,9 @@ public sealed record VoiceDubbingConfiguration
     public int AsrTimeoutSeconds { get; init; } = 600;
     public string? LastSessionDirectory { get; init; }
     public string? LastVoiceId { get; init; }
+    public string TtsProvider { get; init; } = "elevenlabs";
+    public string TtsConfigurationPath { get; init; } = "";
+    public int TtsConcurrency { get; init; } = 4;
     public static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "VoiceDubbing", "voice-dubbing-service.json");
 

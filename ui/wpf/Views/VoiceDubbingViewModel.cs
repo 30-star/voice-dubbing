@@ -64,11 +64,61 @@ public sealed class VoiceDubbingViewModel : INotifyPropertyChanged, IAsyncDispos
     public DubbingSingleGeneration? SingleGeneration { get; private set; }
     private DubbingVoiceChoice? _selectedVoice;
     public DubbingVoiceChoice? SelectedVoice { get => _selectedVoice; set {
-        _selectedVoice = value;
-        if (value != null) try { _service.Configure(_service.Configuration with { LastVoiceId = value.Model.Id }); }
+        _selectedVoice = value != null && Voices.Contains(value) && value.Model.Provider == SelectedProvider?.Id ? value : null;
+        if (_selectedVoice != null) try { _service.Configure(_service.Configuration with { LastVoiceId = _selectedVoice.Model.Id }); }
             catch (Exception ex) { Message = ex.Message; }
         Changed();
     } }
+    public ObservableCollection<DubbingTtsProvider> Providers { get; } = new();
+    private DubbingTtsProvider? _selectedProvider;
+    private string _voiceStatus = "";
+    public DubbingTtsProvider? SelectedProvider { get => _selectedProvider; set {
+        if (_busy || value == null || !Providers.Contains(value) || value.Id == _selectedProvider?.Id) return;
+        _selectedProvider = value;
+        _voiceStatus = "";
+        RebuildVoices(null);
+        try { _service.Configure(_service.Configuration with { TtsProvider = value.Id, LastVoiceId = _selectedVoice?.Model.Id }); }
+        catch (Exception ex) { Message = ex.Message; }
+        Changed();
+        if (value.Ready && value.SupportsVoiceListing) _ = RefreshVoicesAsync();
+    } }
+    public string ProviderStatus => (SelectedProvider?.Status ?? "未配置") + (string.IsNullOrEmpty(_voiceStatus) ? "" : " · " + _voiceStatus);
+    public string TtsConfigurationPath { get; set; }
+    public int TtsConcurrency { get; set; }
+    private void RebuildVoices(string? preferred)
+    {
+        Voices.Clear();
+        foreach (var voice in _service.Voices.Where(v => v.Provider == _selectedProvider?.Id))
+        {
+            var choice = new DubbingVoiceChoice(voice); choice.Changed += Changed; Voices.Add(choice);
+        }
+        _selectedVoice = Voices.FirstOrDefault(v => v.Model.Id == preferred) ?? Voices.FirstOrDefault();
+    }
+    private void RefreshProviders()
+    {
+        string id = _selectedProvider?.Id ?? _service.Configuration.TtsProvider;
+        string? voice = _selectedVoice?.Model.Id ?? _service.Configuration.LastVoiceId;
+        Providers.Clear(); foreach (var provider in _service.Providers) Providers.Add(provider);
+        _selectedProvider = Providers.FirstOrDefault(p => p.Id == id) ?? Providers.FirstOrDefault();
+        RebuildVoices(voice); Changed();
+    }
+    private async Task LoadSelectedVoicesAsync(CancellationToken token)
+    {
+        var provider = SelectedProvider;
+        if (provider is not { Ready: true, SupportsVoiceListing: true }) { _voiceStatus = ""; return; }
+        string? preferred = _selectedVoice?.Model.Id ?? _service.Configuration.LastVoiceId;
+        Voices.Clear(); _selectedVoice = null; _voiceStatus = "正在读取声音列表…"; Changed();
+        try {
+            await _service.RefreshVoicesAsync(provider.Id, token);
+            RebuildVoices(preferred);
+            _voiceStatus = Voices.Count == 0 ? "没有可用声音" : $"已载入 {Voices.Count} 个声音";
+            if (_selectedVoice != null) _service.Configure(_service.Configuration with { LastVoiceId = _selectedVoice.Model.Id });
+        }
+        catch (OperationCanceledException) { _voiceStatus = "声音读取已停止"; throw; }
+        catch (Exception ex) { _voiceStatus = "声音读取失败：" + ex.Message; Message = ex.Message; }
+        Changed();
+    }
+    public Task RefreshVoicesAsync() => Operate(LoadSelectedVoicesAsync);
     public string OutputPath => SingleGeneration?.VideoPath ?? "";
     public bool CanPlay => SingleGeneration is { Status: "succeeded", VideoPath: { Length: > 0 } };
     public bool HasSingleResult => SingleGeneration != null;
@@ -111,7 +161,7 @@ public sealed class VoiceDubbingViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanCorrect => CanEdit && Subtitles.Count > 0;
     public bool CanSave => !_busy && Subtitles.Count > 0 && !_editFailed;
     public bool CanVariant => CanEdit && _reviewed && !_draft;
-    public bool CanStart => !_busy && !_editFailed && _ttsReady && Session is { HasSubtitles: true } && Subtitles.Count > 0 && SelectedVoice != null;
+    public bool CanStart => !_busy && !_editFailed && _ttsReady && Session is { HasSubtitles: true } && Subtitles.Count > 0 && SelectedVoice != null && SelectedProvider?.Ready == true && SelectedVoice.Model.Provider == SelectedProvider.Id;
     public int SelectedVoiceCount => Voices.Count(v => v.Selected);
     public int ExpectedCount => SelectedVoice == null ? 0 : 1;
     public string Statistics => "本次生成 1 个配音视频";
@@ -137,8 +187,9 @@ public sealed class VoiceDubbingViewModel : INotifyPropertyChanged, IAsyncDispos
         FFprobePath = config.FFprobePath; CacheDirectory = config.CacheDirectory; OutputDirectory = config.OutputDirectory;
         AsrModel = config.AsrModel;
         _asrProvider = config.AsrProvider; VideoCaptionerCli = config.VideoCaptionerCli; AsrTimeoutSeconds = config.AsrTimeoutSeconds;
-        foreach (var voice in service.Voices) { var choice = new DubbingVoiceChoice(voice); choice.Changed += Changed; Voices.Add(choice); }
-        _selectedVoice = Voices.FirstOrDefault(v => v.Model.Id == config.LastVoiceId) ?? Voices.FirstOrDefault();
+        TtsConfigurationPath = config.TtsConfigurationPath;
+        TtsConcurrency = config.TtsConcurrency;
+        RefreshProviders();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -191,6 +242,8 @@ public sealed class VoiceDubbingViewModel : INotifyPropertyChanged, IAsyncDispos
     public Task InitializeAsync() => Operate(async token => {
         var environment = await _service.CheckEnvironmentAsync(token);
         _asrReady = environment.AsrReady; _ttsReady = environment.TtsReady; EnvironmentMessage = environment.Summary;
+        RefreshProviders();
+        await LoadSelectedVoicesAsync(token);
         Session = await _service.RestoreSessionAsync(token);
         if (Session is { HasSubtitles: true }) {
             Apply(await _service.CorrectionAsync(Session, token: token));
@@ -206,9 +259,13 @@ public sealed class VoiceDubbingViewModel : INotifyPropertyChanged, IAsyncDispos
         _service.Configure(_service.Configuration with { PythonPath = PythonPath, CoreDirectory = CoreDirectory,
             FFmpegPath = FFmpegPath, FFprobePath = FFprobePath, CacheDirectory = CacheDirectory,
             OutputDirectory = OutputDirectory, AsrModel = AsrModel, AsrProvider = AsrProvider,
-            VideoCaptionerCli = VideoCaptionerCli, AsrTimeoutSeconds = AsrTimeoutSeconds });
+            VideoCaptionerCli = VideoCaptionerCli, AsrTimeoutSeconds = AsrTimeoutSeconds,
+            TtsConfigurationPath = TtsConfigurationPath, TtsConcurrency = TtsConcurrency,
+            TtsProvider = SelectedProvider?.Id ?? _service.Configuration.TtsProvider });
         var environment = await _service.CheckEnvironmentAsync(token);
         _asrReady = environment.AsrReady; _ttsReady = environment.TtsReady; EnvironmentMessage = environment.Summary;
+        RefreshProviders();
+        await LoadSelectedVoicesAsync(token);
         Message = "环境设置已保存。";
     });
 
@@ -318,7 +375,8 @@ public sealed class VoiceDubbingViewModel : INotifyPropertyChanged, IAsyncDispos
         SingleGeneration = result; Message = result.Stage; Changed();
     }
     public Task StartAsync() => Operate(async token => {
-        if (_editFailed || !_ttsReady || Session is not { HasSubtitles: true } || SelectedVoice == null)
+        if (_editFailed || !_ttsReady || Session is not { HasSubtitles: true } || SelectedVoice == null
+            || SelectedProvider?.Ready != true || SelectedVoice.Model.Provider != SelectedProvider.Id)
             throw new InvalidOperationException("请先识别字幕、修正失败的编辑并选择一个声音。");
         var voice = SelectedVoice.Model;
         Message = "保存字幕…"; Changed();

@@ -161,6 +161,7 @@ class ElevenLabsTests(unittest.TestCase):
             provider_id="elevenlabs", selected_voice_name="Chinese Voice",
             model_id="cli-model", output_format="pcm_24000",
             select_voice=lambda: "selected-voice",
+            synthesize=lambda request, *, output_dir: None,
         )
         output = io.StringIO()
         with patch.dict("os.environ", {
@@ -168,7 +169,7 @@ class ElevenLabsTests(unittest.TestCase):
             "ELEVENLABS_TIMEOUT": "99", "ELEVENLABS_MAX_RETRIES": "9",
             "ELEVENLABS_VOICE_ID": "env-voice",
         }), patch("voice_dubbing.cli.resolve_tts_timeline", return_value=(TranscriptTimeline([], 100), {})), patch(
-            "voice_dubbing.cli.ElevenLabsTTSProvider", return_value=selected
+            "voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider", return_value=selected
         ) as constructor, patch("voice_dubbing.cli.synthesize_timeline", return_value=SimpleNamespace(
             audio_path=Path("dubbed_audio.wav"), segments=(), output_duration_ms=100,
             provider_id="elevenlabs", voice_id="selected-voice", is_mock=False, warnings=(),
@@ -230,7 +231,9 @@ class ElevenLabsTests(unittest.TestCase):
             self.assertEqual(opened.call_count, 2)
             self.assertFalse(report["is_mock"])
             self.assertEqual(report["timeline_duration_ms"], 4480)
-            self.assertEqual(report["output_duration_ms"], 5320)
+            self.assertEqual(report["output_duration_ms"], 4480)
+            self.assertTrue(report["segments"][1]["duration_adjusted"])
+            self.assertLessEqual(report["segments"][1]["playback_duration_ms"], 2160)
             self.assertEqual([row["overflow_ms"] for row in report["segments"]], [-1320, 840])
             self.assertEqual([row["voice_id"] for row in report["segments"]], ["one-voice", "one-voice"])
             self.assertTrue((output / "segments" / "000001" / "speech.pcm").is_file())

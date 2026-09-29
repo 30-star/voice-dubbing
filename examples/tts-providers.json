@@ -1,0 +1,20 @@
+{
+  "providers": {
+    "noiz": {
+      "model_id": "noiz-v1",
+      "output_format": "wav",
+      "timeout": 60,
+      "max_retries": 2,
+      "speed": 1,
+      "parameters": { "quality_preset": 3, "similarity_enh": false, "trim_silence": false }
+    },
+    "elevenlabs": {
+      "model_id": "eleven_multilingual_v2",
+      "output_format": "mp3_44100_128",
+      "timeout": 60,
+      "max_retries": 2,
+      "speed": 1,
+      "parameters": {}
+    }
+  }
+}

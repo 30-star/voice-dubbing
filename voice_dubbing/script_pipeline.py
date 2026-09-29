@@ -14,6 +14,7 @@ from .scripts import resolve_script, save_script, inspect_script
 from .correction.serialization import corrected_to_dict, write_json_atomic
 from .timeline.serialization import timeline_to_dict
 from .timeline import save_timeline
+from .tts.concurrent import validate_concurrency
 
 
 def _report(job: ScriptBatchDubbingJob, output_dir: Path, results: list[ScriptVoiceResult],
@@ -57,7 +58,9 @@ def run_script_batch(
     language: str | None = None, ffmpeg_path: Path | None = None,
     ffprobe_path: Path | None = None, renderer: VideoRenderer = render_dubbed_video,
     subtitle_source: dict | None = None,
+    tts_concurrency: int = 1,
 ) -> ScriptBatchDubbingResult:
+    validate_concurrency(tts_concurrency)
     if not isinstance(job, ScriptBatchDubbingJob):
         raise ValidationError("job must be a ScriptBatchDubbingJob")
     if not job.source_video.is_file():
@@ -104,6 +107,7 @@ def run_script_batch(
                 provider_factory=provider_factory, video_name=name, language=language,
                 ffmpeg_path=ffmpeg_path, ffprobe_path=ffprobe_path, renderer=renderer,
                 subtitle_source=subtitle_source,
+                tts_concurrency=tts_concurrency,
                 script_context={**inspect_script(job.base_timeline, selection.script),
                                 "script_sha256": script_sha256(selection.script),
                                 "voice_profile_id": voice.id, "voice_name": voice.name},

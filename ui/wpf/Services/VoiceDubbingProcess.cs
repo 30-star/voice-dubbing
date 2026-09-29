@@ -19,10 +19,17 @@ public interface IVoiceDubbingProcess
 /// <summary>Owns only the dubbing child; never registers it with the main task scheduler.</summary>
 public sealed class VoiceDubbingProcess : IVoiceDubbingProcess
 {
-    internal static string? ApiKey => new[] { EnvironmentVariableTarget.Process, EnvironmentVariableTarget.User, EnvironmentVariableTarget.Machine }
-        .Select(target => Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY", target))
+    private static readonly string[] CredentialNames = { "ELEVENLABS_API_KEY", "NOIZ_API_KEY", "VOLCENGINE_API_KEY", "MINIMAX_API_KEY", "SILICONFLOW_API_KEY" };
+    private static string? Credential(string name) => new[] { EnvironmentVariableTarget.Process, EnvironmentVariableTarget.User, EnvironmentVariableTarget.Machine }
+        .Select(target => Environment.GetEnvironmentVariable(name, target))
         .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-    internal static string Sanitize(string text) => string.IsNullOrEmpty(ApiKey) ? text : text.Replace(ApiKey, "[REDACTED]", StringComparison.Ordinal);
+    internal static string? ApiKey => Credential("ELEVENLABS_API_KEY");
+    internal static string Sanitize(string text)
+    {
+        foreach (string name in CredentialNames)
+            if (Credential(name) is { Length: > 0 } key) text = text.Replace(key, "[REDACTED]", StringComparison.Ordinal);
+        return text;
+    }
 
     public async Task<DubbingProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments,
         string directory, string logPrefix, CancellationToken token)
@@ -43,10 +50,11 @@ public sealed class VoiceDubbingProcess : IVoiceDubbingProcess
             info.Environment["TMP"] = profile;
             info.Environment["WIN_PD_OVERRIDE_LOCAL_APPDATA"] = Path.Combine(profile, "AppData", "Local");
             info.Environment["WIN_PD_OVERRIDE_APPDATA"] = Path.Combine(profile, "AppData", "Roaming");
-            info.Environment.Remove("ELEVENLABS_API_KEY");
+            foreach (string name in CredentialNames) info.Environment.Remove(name);
             info.Environment.Remove("OPENAI_API_KEY");
         }
-        if (!captioner && !string.IsNullOrEmpty(ApiKey)) info.Environment["ELEVENLABS_API_KEY"] = ApiKey;
+        if (!captioner) foreach (string name in CredentialNames)
+            if (Credential(name) is { Length: > 0 } key) info.Environment[name] = key;
         using var child = new Process { StartInfo = info };
         var gate = new object();
         bool started = false;

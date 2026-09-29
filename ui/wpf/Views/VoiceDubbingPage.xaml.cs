@@ -50,6 +50,7 @@ public partial class VoiceDubbingPage : UserControl
         string? path = PickVideo(); if (path != null) await ViewModel.AddVideoAsync(path);
     }
     private async void Recognize_Click(object sender, RoutedEventArgs e) => await ViewModel.RecognizeAsync();
+    private async void RefreshVoices_Click(object sender, RoutedEventArgs e) => await ViewModel.RefreshVoicesAsync();
     private async void NewRecognition_Click(object sender, RoutedEventArgs e) {
         if (CommitEditors()) await ViewModel.NewRecognitionAsync();
     }

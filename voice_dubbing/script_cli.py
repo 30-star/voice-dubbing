@@ -14,7 +14,7 @@ from .script_pipeline import run_script_batch
 from .scripts import (copy_script, create_script, inspect_script, load_script,
                       load_script_selections, replace_script_text, save_script, set_segment_text,
                       restore_script_segment, rename_script, resolve_script, migrate_script)
-from .tts import CachedTTSProvider, ElevenLabsTTSProvider
+from .tts import CachedTTSProvider, default_registry
 
 
 def add_script_commands(subcommands) -> None:
@@ -129,22 +129,25 @@ def run_dub_scripts(args: argparse.Namespace, options: dict) -> int:
     output = args.output_dir or root / "output" / f"{args.video.stem[:40]}-scripts-{uuid4().hex[:8]}"
     if output.exists() and any(output.iterdir()):
         raise MediaError(f"output directory must be empty: {output}")
-    # Constructor validation is local. Validate all profiles before any generation.
+    registry = default_registry()
+    configs = {}
     for selection in selections:
         for voice in selection.voices:
-            if voice.provider != "elevenlabs":
-                raise ValidationError("dub-scripts currently supports ElevenLabs voice profiles only")
-            ElevenLabsTTSProvider(model_id=voice.model_id, **options)
+            configs[voice.id, voice.provider, voice.model_id, voice.voice_id] = (
+                registry.configuration(voice.provider, model_id=voice.model_id, options=options,
+                                       settings=options.get("provider_settings")))
+    for config in configs.values():
+        registry.create(config)
     cache_dir = args.cache_dir or root / "cache" / "tts"
 
     def factory(voice):
-        provider = ElevenLabsTTSProvider(model_id=voice.model_id, **options)
+        provider = registry.create(configs[voice.id, voice.provider, voice.model_id, voice.voice_id])
         provider.selected_voice_name = voice.name
         return CachedTTSProvider(provider, cache_dir, enabled=not args.no_cache)
 
     result = run_script_batch(job, output_dir=output, provider_factory=factory,
                               language=args.language, ffmpeg_path=args.ffmpeg, ffprobe_path=args.ffprobe,
-                              subtitle_source=subtitle_source)
+                              subtitle_source=subtitle_source, tts_concurrency=args.tts_concurrency)
     print(json.dumps({
         "status": result.status, "report": str(result.report_path), "asr_calls": 0,
         "combinations": [{"script_id": item.script.id, "script_name": item.script.name,

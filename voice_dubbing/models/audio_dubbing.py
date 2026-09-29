@@ -16,6 +16,10 @@ class DubbingSegment:
     overrun_ms: int
     overlap_with_next_ms: int
     warnings: tuple[str, ...]
+    playback_audio_path: Path | None = None
+    playback_duration_ms: int | None = None
+    speed_factor: float = 1.0
+    playback_overlap_with_next_ms: int = 0
 
     @property
     def actual_duration_ms(self) -> int:

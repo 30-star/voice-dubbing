@@ -57,7 +57,7 @@ class CorrectionCLITests(unittest.TestCase):
             asr = CountingASR()
             with patch.dict("os.environ", {"ELEVENLABS_API_KEY": "", "ELEVENLABS_TIMEOUT": "invalid-for-TTS"}), \
                     patch("voice_dubbing.video_cli.create_asr", return_value=asr), \
-                    patch("voice_dubbing.video_cli.ElevenLabsTTSProvider") as tts:
+                    patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider") as tts:
                 code, result, error = call(["dub-video", str(source), "--voices", "bill-id,sarah-id", "--no-asr-cache",
                                             "--output-dir", str(root / "review")])
             self.assertEqual(code, 0, error)
@@ -77,7 +77,7 @@ class CorrectionCLITests(unittest.TestCase):
                 kwargs["renderer"] = fake_renderer
                 return dub_video(*args, **kwargs)
             with patch("voice_dubbing.video_cli.create_asr", return_value=asr), \
-                    patch("voice_dubbing.video_cli.ElevenLabsTTSProvider", return_value=CountingTTS()), \
+                    patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider", return_value=CountingTTS()), \
                     patch("voice_dubbing.video_cli.dub_video", side_effect=accepted):
                 code, result, error = call(["dub-video", str(source), "--voices", "bill-id", "--accept-asr", "--no-asr-cache",
                     "--no-cache", "--output-dir", str(root / "out")])
@@ -97,7 +97,7 @@ class CorrectionCLITests(unittest.TestCase):
             legacy = root / "old.json"
             save_timeline(timeline(), legacy)
             for source in (legacy, root / "review"):
-                with self.subTest(source=source), patch("voice_dubbing.cli.FakeTTSProvider") as tts:
+                with self.subTest(source=source), patch("voice_dubbing.tts.fake.FakeTTSProvider") as tts:
                     code, result, error = call(["dub-timeline", str(source), "--provider", "fake"])
                     self.assertEqual(code, 2)
                     tts.assert_not_called()
@@ -106,7 +106,7 @@ class CorrectionCLITests(unittest.TestCase):
             data = json.loads(corrected.read_text(encoding="utf-8"))
             data["segments"][0]["start_ms"] += 1
             corrected.write_text(json.dumps(data), encoding="utf-8")
-            with patch("voice_dubbing.video_cli.ElevenLabsTTSProvider") as tts:
+            with patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider") as tts:
                 video = root / "source.mp4"
                 video.touch()
                 code, _, _ = call(["dub-video", str(video), "--timeline", str(root / "review"),
@@ -131,7 +131,7 @@ class CorrectionCLITests(unittest.TestCase):
             def prepared(*args, **kwargs):
                 kwargs["renderer"] = fake_renderer
                 return run_batch(*args, **kwargs)
-            with patch("voice_dubbing.video_cli.ElevenLabsTTSProvider", side_effect=lambda **_: Tracking()), \
+            with patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider", side_effect=lambda **_: Tracking()), \
                     patch("voice_dubbing.video_cli.run_batch", side_effect=prepared), \
                     patch("voice_dubbing.video_cli.create_asr", side_effect=AssertionError("ASR forbidden")), \
                     patch("voice_dubbing.pipeline.extract_audio", side_effect=AssertionError("extract forbidden")):
@@ -194,7 +194,7 @@ class CorrectionCLITests(unittest.TestCase):
                 "id": "bill", "name": "Bill", "provider": "elevenlabs", "voice_id": "bill-id", "model_id": "model"}]}]),
                 encoding="utf-8")
             before = (root / "old.json").read_bytes()
-            with patch("voice_dubbing.script_cli.ElevenLabsTTSProvider") as provider:
+            with patch("voice_dubbing.tts.elevenlabs.ElevenLabsTTSProvider") as provider:
                 code, _, error = call(["dub-scripts", str(root / "source.mp4"), "--timeline", str(review),
                                         "--variants-file", str(root / "jobs.json")])
             self.assertEqual(code, 2)

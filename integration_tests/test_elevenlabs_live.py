@@ -18,7 +18,7 @@ from voice_dubbing.timeline import load_timeline
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TIMELINE = Path(os.environ.get("VOICE_DUBBING_TIMELINE", "fixtures/timeline.json"))
+TIMELINE = ROOT / "output" / "··217312-568423d0" / "timeline.json"
 
 
 class ElevenLabsLiveTests(unittest.TestCase):
