@@ -191,7 +191,7 @@ python -m unittest integration_tests.test_batch_live -v
 同盘基础引用相对于版本文件目录保存；跨盘使用绝对路径。复制到其他目录会重新计算相对引用。原始 ASR 身份或时间结构不一致时拒绝绑定；仅校正文字变化不会使版本失效。原版覆盖表为空；设置为当前基础文字、或 `restore`，均删除对应覆盖。
 
 ```powershell
-Set-Location '.'
+# 在仓库根目录下运行。
 # 使用现有已审核字幕，不重新运行 ASR。
 python -m voice_dubbing script create 'output\source' `
   --id original --name 原版 --output 'scripts\original.json'

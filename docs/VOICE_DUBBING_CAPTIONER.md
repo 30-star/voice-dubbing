@@ -11,7 +11,7 @@
 CLI 默认入口及备用入口：
 
 ```powershell
-Set-Location '.'
+# 在仓库根目录下运行。
 python -m voice_dubbing transcribe-video 'C:\Videos\sample.mp4' --language zh
 python -m voice_dubbing transcribe-video 'C:\Videos\sample.mp4' --asr-provider faster-whisper --local-model-only --language zh
 ```
